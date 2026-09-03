@@ -65,6 +65,23 @@ test("manual palette dither choice survives later output preset changes", async 
   expect(preferences).toContain('localStorage.setItem(paletteDitherPreferenceKey, value ? "1" : "0")');
 });
 
+test("hardware output presets select their native vertical resolution in the Resolution control", async () => {
+  const preferences = await readFile(join(root, "src", "web", "preset-preferences.ts"), "utf8");
+  expect(preferences).toContain('"cga320-auto": 200');
+  expect(preferences).toContain('cga640: 200');
+  expect(preferences).toContain('cga160: 100');
+  expect(preferences).toContain('"c64-multicolour": 200');
+  expect(preferences).toContain('"nes-bg": 240');
+  expect(preferences).toContain('"snes-4bpp": 224');
+  expect(preferences).toContain('"genesis-4bpp": 224');
+  expect(preferences).toContain('svga640: 480');
+  expect(preferences).toContain('svga800: 600');
+  expect(preferences).toContain('svga1024: 768');
+  expect(preferences).toContain('columns.value = String(resolution);');
+  expect(preferences).toContain('columnsValue.value = String(resolution);');
+  expect(preferences).toContain('columns.dispatchEvent(new Event("change", { bubbles: true }));');
+});
+
 test("copy text is replaced by final Unicode raster download and every button label stays on one line", async () => {
   const html = await readFile(join(root, "web", "index.html"), "utf8");
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
