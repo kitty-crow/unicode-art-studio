@@ -13,6 +13,8 @@ import { download } from "./download.ts";
 import { EmbedView } from "./embed-view.ts";
 import { cancelEmbedHtml, embedHtml } from "./embed.ts";
 import { decodeImage } from "./image.ts";
+import { parsePalette, remapPalette, type StudioArtCfg } from "./palette.ts";
+import { downloadRaster } from "./raster.ts";
 import { bindResolutionGate } from "./resolution.ts";
 import { bindTooltips } from "./tooltips.ts";
 
@@ -39,8 +41,8 @@ export const startStudio = (): void => {
   const upload = qs<HTMLInputElement>("#upload"), drop = qs<HTMLElement>("#drop"), output = qs<HTMLElement>("#output"), status = qs<HTMLElement>("#status"), previewScroll = qs<HTMLElement>(".preview-scroll"), previewInfo = qs<HTMLButtonElement>("#preview-contrast-info");
   const columns = qs<HTMLInputElement>("#columns"), columnsValue = qs<HTMLInputElement>("#columns-value"), contrast = qs<HTMLInputElement>("#contrast"), detail = qs<HTMLInputElement>("#detail"), bias = qs<HTMLInputElement>("#bias"), dither = qs<HTMLSelectElement>("#dither"), invert = qs<HTMLInputElement>("#invert"), canvasToggle = qs<HTMLInputElement>("#canvas-toggle"), canvasToggleLabel = qs<HTMLElement>("#canvas-toggle-label"), reset = qs<HTMLButtonElement>("#reset-sliders"), resolutionTip = qs<HTMLElement>("#resolution-tip");
   const resolutionRange = qs<HTMLElement>(".resolution-range"), resolutionNotch = qs<HTMLElement>(".resolution-notch"), resolutionInfo = qs<HTMLButtonElement>(".resolution-control .slider-info");
-  const colour = qs<HTMLInputElement>("#colour"), fullColour = qs<HTMLInputElement>("#full-colour");
-  const copy = qs<HTMLButtonElement>("#copy"), copyEmbed = qs<HTMLButtonElement>("#copy-embed"), txt = qs<HTMLButtonElement>("#download-txt"), html = qs<HTMLButtonElement>("#download-html"), svg = qs<HTMLButtonElement>("#download-svg"), metrics = qs<HTMLElement>("#metrics"), embedCode = qs<HTMLElement>("#embed-code");
+  const colour = qs<HTMLInputElement>("#colour"), fullColour = qs<HTMLInputElement>("#full-colour"), paletteInput = qs<HTMLTextAreaElement>("#palette"), paletteDither = qs<HTMLInputElement>("#palette-dither");
+  const raster = qs<HTMLButtonElement>("#download-raster"), copyEmbed = qs<HTMLButtonElement>("#copy-embed"), txt = qs<HTMLButtonElement>("#download-txt"), html = qs<HTMLButtonElement>("#download-html"), svg = qs<HTMLButtonElement>("#download-svg"), metrics = qs<HTMLElement>("#metrics"), embedCode = qs<HTMLElement>("#embed-code");
   const embedProgress = qs<HTMLElement>("#embed-progress"), embedProgressBar = qs<HTMLProgressElement>("#embed-progress-bar"), embedProgressText = qs<HTMLOutputElement>("#embed-progress-text");
 
   const resolutionMax = 2048;
@@ -61,7 +63,7 @@ export const startStudio = (): void => {
   resolutionInfo.dataset.tip = "Controls horizontal Unicode cell count. Above 256 is experimental. Beyond 765 is extreme territory; 1K and beyond puts serious pressure on browser memory. The slider stops at 2048, but larger values can be typed manually at your own risk.";
   resolutionInfo.setAttribute("aria-label", "About resolution. Above 256 cells is experimental; beyond 765 is extreme, with a 1K memory warning. The slider stops at 2048, while larger values may be entered manually with confirmation.");
 
-  let vector: VecStage | null = null, name = "hero", art: Art | null = null, embed = "", loadGeneration = 0;
+  let vectorBase: VecStage | null = null, vector: VecStage | null = null, name = "hero", art: Art | null = null, embed = "", loadGeneration = 0;
   let currentSource: Blob | string = "assets/hero.png";
   let heroPixels: Pixels | null = null, heroObjectUrl: string | null = null;
   let studioGeneration = 0, embedGeneration = 0, embedTimer = 0, manualCanvasDark: boolean | null = null;
@@ -74,11 +76,13 @@ export const startStudio = (): void => {
   };
 
   const setStatus = (text: string, busy = false): void => { status.textContent = text; status.toggleAttribute("data-busy", busy); };
-  const studioCfg = (): ArtCfg => {
+  const studioCfg = (): StudioArtCfg => {
     const full = colour.checked && fullColour.checked;
+    const palette = paletteInput.value.trim();
     return {
       columns: Number(columnsValue.value), contrast: Number(contrast.value), detail: Number(detail.value), bias: Number(bias.value), dither: dither.value as Dither, invert: invert.checked,
       colour: colour.checked, colourBackground: full, fullColour: full,
+      ...(palette ? { palette, paletteDither: paletteDither.checked } : {}),
     };
   };
   const heroCfg = (): ArtCfg => {
@@ -90,6 +94,20 @@ export const startStudio = (): void => {
       columns: 96, contrast: 1.12, detail: 0.34, bias: 0.015, dither: "ordered", invert: true,
       colour: false, colourBackground: false, fullColour: false,
     };
+  };
+
+  const paletteVector = (source: VecStage): VecStage | null => {
+    try {
+      const palette = parsePalette(paletteInput.value);
+      paletteInput.setCustomValidity("");
+      paletteInput.removeAttribute("aria-invalid");
+      return palette.length === 0 ? source : { ...source, pixels: remapPalette(source.pixels, palette, paletteDither.checked) };
+    } catch (error) {
+      paletteInput.setCustomValidity(error instanceof Error ? error.message : "Invalid palette.");
+      paletteInput.setAttribute("aria-invalid", "true");
+      setStatus("Invalid palette.");
+      return null;
+    }
   };
 
   const automaticDarkCanvas = (theme: Theme = activeTheme()): boolean => theme === "dark" || (colour.checked && !fullColour.checked);
@@ -164,7 +182,6 @@ export const startStudio = (): void => {
       if (generation !== embedGeneration || art !== next || story !== storyPayload) return;
       const raw = packBoundedRaw(next, cfg);
       if (cacheArt) {
-        // Snapshot before the high-resolution Worker takes ownership of raw.buffer.
         const cachedRaw = new Blob([raw.buffer as ArrayBuffer], { type: "application/x-unicode-art" });
         queueCache(() => storeCachedArt(__WEB_VERSION__, id, source, sourceName, cfg, paths, rectangles, next, cachedRaw));
       }
@@ -246,15 +263,18 @@ export const startStudio = (): void => {
     if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
     setStatus("Vectorising…", true);
     await new Promise(requestAnimationFrame);
-    const nextVector = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
+    const nextBase = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
     if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
+    const nextVector = paletteVector(nextBase);
+    if (!nextVector) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
+    vectorBase = nextBase;
     vector = nextVector;
     currentSource = source;
     name = nextName;
     currentPaths = nextVector.paths;
     currentRectangles = nextVector.rectangles;
     if (seedHero) {
-      heroPixels = nextVector.pixels;
+      heroPixels = nextBase.pixels;
       if (heroObjectUrl) URL.revokeObjectURL(heroObjectUrl);
       heroImg.src = decoded.url;
       heroObjectUrl = decoded.revoke ? decoded.url : null;
@@ -268,8 +288,11 @@ export const startStudio = (): void => {
       const decoded = await decodeImage(source);
       if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
       await new Promise(requestAnimationFrame);
-      const nextVector = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
+      const nextBase = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
       if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
+      const nextVector = paletteVector(nextBase);
+      if (!nextVector) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
+      vectorBase = nextBase;
       vector = nextVector;
       currentSource = source;
       name = nextName;
@@ -295,7 +318,7 @@ export const startStudio = (): void => {
     }
   };
 
-  const applyCachedControls = (cfg: ArtCfg): void => {
+  const applyCachedControls = (cfg: StudioArtCfg): void => {
     const requested = Math.max(resolutionMin, Math.round(cfg.columns ?? 96));
     columnsValue.value = String(requested);
     columns.value = String(Math.min(resolutionMax, requested));
@@ -306,6 +329,10 @@ export const startStudio = (): void => {
     invert.checked = cfg.invert ?? true;
     colour.checked = cfg.colour === true;
     fullColour.checked = colour.checked && cfg.fullColour === true;
+    paletteInput.value = cfg.palette ?? "";
+    paletteDither.checked = cfg.paletteDither === true;
+    paletteInput.setCustomValidity("");
+    paletteInput.removeAttribute("aria-invalid");
     syncColour(false);
   };
 
@@ -315,13 +342,14 @@ export const startStudio = (): void => {
     window.clearTimeout(embedTimer);
     cancelEmbedHtml();
     const generation = ++embedGeneration;
+    vectorBase = null;
     vector = null;
     currentSource = cached.source;
     name = cached.name;
     currentCacheId = cached.id;
     currentPaths = cached.paths;
     currentRectangles = cached.rectangles;
-    applyCachedControls(cached.cfg);
+    applyCachedControls(cached.cfg as StudioArtCfg);
     art = cached.art;
     metrics.textContent = `${cached.art.columns}×${cached.art.rows} cells · ${(cached.art.density * 100).toFixed(1)}% dots · ${cached.paths} paths${cached.art.cellColours ? " · colour" : ""}`;
     setStatus("Restoring cached art…", true);
@@ -349,9 +377,21 @@ export const startStudio = (): void => {
     regenerateEmbed();
   });
 
-  let debounce = 0;
+  let debounce = 0, paletteDebounce = 0;
   const schedule = (): void => { window.clearTimeout(debounce); debounce = window.setTimeout(generateStudio, 90); };
+  const schedulePalette = (): void => {
+    window.clearTimeout(paletteDebounce);
+    paletteDebounce = window.setTimeout(() => {
+      if (!vectorBase) return;
+      const next = paletteVector(vectorBase);
+      if (!next) return;
+      vector = next;
+      generateStudio();
+    }, 120);
+  };
   for (const control of [contrast, detail, bias, dither, invert]) control.addEventListener("input", schedule);
+  paletteInput.addEventListener("input", schedulePalette);
+  paletteDither.addEventListener("change", schedulePalette);
   bindResolutionGate(columns, columnsValue, resolutionTip, schedule, {
     confirmAboveMax: value => window.confirm(`2K was the last stop. Are nya sure you want to keep going? Your RAM is already at the bus stop trying to get home.\n\nRequested resolution: ${value} cells. This is unsupported and may crash the tab.`),
   });
@@ -387,13 +427,28 @@ export const startStudio = (): void => {
     if (theme === "light" || theme === "dark") applyThemeDefaults(theme);
   });
 
-  upload.addEventListener("change", () => { const file = upload.files?.[0]; if (file) void loadStudio(file, file.name.replace(/\.[^.]+$/, "")); });
+  const supportedImage = (file: File): boolean => file.type === "image/png" || file.type === "image/jpeg" || /\.(?:png|jpe?g)$/iu.test(file.name);
+  upload.addEventListener("change", () => { const file = upload.files?.[0]; if (file && supportedImage(file)) void loadStudio(file, file.name.replace(/\.[^.]+$/, "")); });
   drop.addEventListener("dragover", event => { event.preventDefault(); drop.dataset.drag = "true"; });
   drop.addEventListener("dragleave", () => delete drop.dataset.drag);
-  drop.addEventListener("drop", event => { event.preventDefault(); delete drop.dataset.drag; const file = event.dataTransfer?.files?.[0]; if (file?.type === "image/png") void loadStudio(file, file.name.replace(/\.[^.]+$/, "")); });
+  drop.addEventListener("drop", event => {
+    event.preventDefault();
+    delete drop.dataset.drag;
+    const file = event.dataTransfer?.files?.[0];
+    if (file && supportedImage(file)) void loadStudio(file, file.name.replace(/\.[^.]+$/, ""));
+    else if (file) setStatus("Choose a PNG or JPEG.");
+  });
 
   const textOutput = (): string => art ? (art.cellColours ? taggedText(art) : art.text) : "";
-  copy.addEventListener("click", async () => { if (!art) return; await navigator.clipboard.writeText(textOutput()); const old = copy.textContent; copy.textContent = "Copied"; setTimeout(() => { copy.textContent = old; }, 900); });
+  raster.addEventListener("click", () => {
+    if (!art) return;
+    const current = art;
+    const foreground = getComputedStyle(output).color || "#111111";
+    setStatus("Rasterising…", true);
+    void downloadRaster(current, foreground).then(() => {
+      if (art === current) setStatus("Ready");
+    }).catch(error => setStatus(error instanceof Error ? error.message : "Raster export failed."));
+  });
   copyEmbed.addEventListener("click", async () => { if (!embed) return; await navigator.clipboard.writeText(embed); const old = copyEmbed.textContent; copyEmbed.textContent = "Copied embed"; setTimeout(() => { copyEmbed.textContent = old; }, 1100); });
   txt.addEventListener("click", () => { if (art) void download("txt", "text/plain;charset=utf-8", `${textOutput()}\n`); });
   html.addEventListener("click", () => { if (art) void download("html", "text/html;charset=utf-8", denseHtml(art, name, 0.02)); });
