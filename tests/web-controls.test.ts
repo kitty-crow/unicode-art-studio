@@ -103,13 +103,24 @@ test("copy text is replaced by final Unicode raster download and every button la
   expect(presetsCss).toContain('#download-raster{font-size:clamp(');
 });
 
+test("raster export uses WebKit image sharing while other downloads stay file downloads", async () => {
+  const download = await readFile(join(root, "src", "web", "download.ts"), "utf8");
+  const raster = await readFile(join(root, "src", "web", "raster.ts"), "utf8");
+  expect(download).toContain('/AppleWebKit/u.test(navigator.userAgent)');
+  expect(download).toContain('new File([blob], name');
+  expect(download).toContain('navigator.canShare({ files: [file] })');
+  expect(download).toContain('await navigator.share({ files: [file] })');
+  expect(download).toContain('error.name === "AbortError"');
+  expect(raster).toContain('downloadImage("png", "image/png"');
+});
+
 test("browser downloads use a SHA-256 content-addressed Studio filename", async () => {
   const download = await readFile(join(root, "src", "web", "download.ts"), "utf8");
   const raster = await readFile(join(root, "src", "web", "raster.ts"), "utf8");
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
   expect(download).toContain('crypto.subtle.digest("SHA-256", await blob.arrayBuffer())');
   expect(download).toContain('kitty-crow-github-io-unicode-art-studio-${hex(digest)}.${suffix}');
-  expect(raster).toContain('download("png", "image/png"');
+  expect(raster).toContain('downloadImage("png", "image/png"');
   expect(studio).toContain('download("txt", "text/plain;charset=utf-8"');
   expect(studio).toContain('download("html", "text/html;charset=utf-8"');
   expect(studio).toContain('download("svg", "image/svg+xml;charset=utf-8"');
