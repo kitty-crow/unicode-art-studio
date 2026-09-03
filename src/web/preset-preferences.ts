@@ -1,24 +1,26 @@
 const paletteDitherPreferenceKey = "unicode-art-studio.palette-dither.preference";
 
-const nativePresetResolution: Readonly<Record<string, number>> = {
-  "cga320-auto": 200,
-  "cga320-p0-low": 200,
-  "cga320-p0-high": 200,
-  "cga320-p1-low": 200,
-  "cga320-p1-high": 200,
-  cga640: 200,
-  cga160: 100,
-  ega16: 200,
-  vga13: 200,
-  svga640: 480,
-  svga800: 600,
-  svga1024: 768,
-  "c64-hires": 200,
-  "c64-multicolour": 200,
-  "nes-bg": 240,
-  "snes-4bpp": 224,
-  "snes-8bpp": 224,
-  "genesis-4bpp": 224,
+// Studio Resolution is Unicode columns. For a native W×H hardware raster,
+// W×2 columns gives a 4× working raster and H Unicode rows at the same aspect ratio.
+const hardwarePresetResolution: Readonly<Record<string, number>> = {
+  "cga320-auto": 640,
+  "cga320-p0-low": 640,
+  "cga320-p0-high": 640,
+  "cga320-p1-low": 640,
+  "cga320-p1-high": 640,
+  cga640: 1280,
+  cga160: 320,
+  ega16: 640,
+  vga13: 640,
+  svga640: 1280,
+  svga800: 1600,
+  svga1024: 2048,
+  "c64-hires": 640,
+  "c64-multicolour": 640,
+  "nes-bg": 512,
+  "snes-4bpp": 512,
+  "snes-8bpp": 512,
+  "genesis-4bpp": 640,
 };
 
 const readPreference = (): boolean | null => {
@@ -40,7 +42,7 @@ const writePreference = (value: boolean): void => {
   }
 };
 
-export const presetResolution = (preset: string): number | undefined => nativePresetResolution[preset];
+export const presetResolution = (preset: string): number | undefined => hardwarePresetResolution[preset];
 
 export const bindPresetPreferences = (): void => {
   const paletteDither = document.querySelector<HTMLInputElement>("#palette-dither");
