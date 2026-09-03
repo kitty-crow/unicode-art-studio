@@ -53,16 +53,66 @@ test("hardware presets are defaults rather than locked controls", async () => {
   expect(studio).not.toContain('dither.disabled = true');
 });
 
-test("copy text is replaced by final Unicode raster download and action labels never wrap", async () => {
+test("manual palette dither choice survives later output preset changes", async () => {
+  const web = await readFile(join(root, "src", "web.ts"), "utf8");
+  const preferences = await readFile(join(root, "src", "web", "preset-preferences.ts"), "utf8");
+  expect(web).toContain('import { bindPresetPreferences } from "./web/preset-preferences.ts";');
+  expect(web.indexOf("startStudio();")).toBeLessThan(web.indexOf("bindPresetPreferences();"));
+  expect(preferences).toContain('paletteDither.addEventListener("change"');
+  expect(preferences).toContain('manualPaletteDither = paletteDither.checked;');
+  expect(preferences).toContain('outputPreset.addEventListener("change"');
+  expect(preferences).toContain('if (manualPaletteDither !== null) paletteDither.checked = manualPaletteDither;');
+  expect(preferences).toContain('localStorage.setItem(paletteDitherPreferenceKey, value ? "1" : "0")');
+});
+
+test("hardware output presets map native horizontal pixels to two Unicode columns each", async () => {
+  const preferences = await readFile(join(root, "src", "web", "preset-preferences.ts"), "utf8");
+  expect(preferences).toContain('"cga320-auto": 640');
+  expect(preferences).toContain('"cga320-p0-low": 640');
+  expect(preferences).toContain('"cga320-p0-high": 640');
+  expect(preferences).toContain('"cga320-p1-low": 640');
+  expect(preferences).toContain('"cga320-p1-high": 640');
+  expect(preferences).toContain('cga640: 1280');
+  expect(preferences).toContain('cga160: 320');
+  expect(preferences).toContain('ega16: 640');
+  expect(preferences).toContain('vga13: 640');
+  expect(preferences).toContain('svga640: 1280');
+  expect(preferences).toContain('svga800: 1600');
+  expect(preferences).toContain('svga1024: 2048');
+  expect(preferences).toContain('"c64-hires": 640');
+  expect(preferences).toContain('"c64-multicolour": 640');
+  expect(preferences).toContain('"nes-bg": 512');
+  expect(preferences).toContain('"snes-4bpp": 512');
+  expect(preferences).toContain('"snes-8bpp": 512');
+  expect(preferences).toContain('"genesis-4bpp": 640');
+  expect(preferences).toContain('columns.value = String(resolution);');
+  expect(preferences).toContain('columnsValue.value = String(resolution);');
+  expect(preferences).toContain('columns.dispatchEvent(new Event("change", { bubbles: true }));');
+});
+
+test("copy text is replaced by final Unicode raster download and every button label stays on one line", async () => {
   const html = await readFile(join(root, "web", "index.html"), "utf8");
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
+  const baseCss = await readFile(join(root, "web", "styles", "base.css"), "utf8");
   const presetsCss = await readFile(join(root, "web", "styles", "presets.css"), "utf8");
   expect(html).toContain('<button id="download-raster" class="button primary" type="button">Download as raster</button>');
   expect(html).not.toContain('<button id="copy"');
   expect(studio).toContain('downloadRaster(current, foreground)');
   expect(studio).not.toContain('navigator.clipboard.writeText(textOutput())');
-  expect(presetsCss).toContain('& .button{white-space:nowrap;}');
+  expect(baseCss).toContain('font-weight:750;white-space:nowrap;cursor:pointer;');
   expect(presetsCss).toContain('#download-raster{font-size:clamp(');
+});
+
+test("raster export uses WebKit image sharing while other downloads stay file downloads", async () => {
+  const download = await readFile(join(root, "src", "web", "download.ts"), "utf8");
+  const raster = await readFile(join(root, "src", "web", "raster.ts"), "utf8");
+  expect(download).toContain('/AppleWebKit/u.test(ua)');
+  expect(download).toContain('/(?:iPhone|iPad|iPod)/u.test(ua)');
+  expect(download).toContain('new File([blob], name');
+  expect(download).toContain('navigator.canShare({ files: [file] })');
+  expect(download).toContain('await navigator.share({ files: [file] })');
+  expect(download).toContain('error.name === "AbortError"');
+  expect(raster).toContain('downloadImage("png", "image/png"');
 });
 
 test("browser downloads use a SHA-256 content-addressed Studio filename", async () => {
@@ -71,7 +121,7 @@ test("browser downloads use a SHA-256 content-addressed Studio filename", async 
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
   expect(download).toContain('crypto.subtle.digest("SHA-256", await blob.arrayBuffer())');
   expect(download).toContain('kitty-crow-github-io-unicode-art-studio-${hex(digest)}.${suffix}');
-  expect(raster).toContain('download("png", "image/png"');
+  expect(raster).toContain('downloadImage("png", "image/png"');
   expect(studio).toContain('download("txt", "text/plain;charset=utf-8"');
   expect(studio).toContain('download("html", "text/html;charset=utf-8"');
   expect(studio).toContain('download("svg", "image/svg+xml;charset=utf-8"');

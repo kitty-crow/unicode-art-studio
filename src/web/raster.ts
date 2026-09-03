@@ -1,6 +1,6 @@
 import { rgbHex } from "../colour/space.ts";
 import type { Art, Rgb } from "../types.ts";
-import { download } from "./download.ts";
+import { downloadImage } from "./download.ts";
 
 const preferredCellWidth = 8;
 const maxRasterDimension = 4096;
@@ -107,7 +107,7 @@ export const downloadRaster = async (art: Art, defaultForeground = "#111111"): P
     if (!context) throw new Error("Canvas is unavailable.");
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return await download("png", "image/png", await pngBlob(canvas));
+    return await downloadImage("png", "image/png", await pngBlob(canvas));
   } finally {
     URL.revokeObjectURL(url);
   }
