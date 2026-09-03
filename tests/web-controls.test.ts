@@ -53,15 +53,28 @@ test("hardware presets are defaults rather than locked controls", async () => {
   expect(studio).not.toContain('dither.disabled = true');
 });
 
-test("copy text is replaced by final Unicode raster download and action labels never wrap", async () => {
+test("manual palette dither choice survives later output preset changes", async () => {
+  const web = await readFile(join(root, "src", "web.ts"), "utf8");
+  const preferences = await readFile(join(root, "src", "web", "preset-preferences.ts"), "utf8");
+  expect(web).toContain('import { bindPresetPreferences } from "./web/preset-preferences.ts";');
+  expect(web.indexOf("startStudio();")).toBeLessThan(web.indexOf("bindPresetPreferences();"));
+  expect(preferences).toContain('paletteDither.addEventListener("change"');
+  expect(preferences).toContain('manualPaletteDither = paletteDither.checked;');
+  expect(preferences).toContain('outputPreset.addEventListener("change"');
+  expect(preferences).toContain('if (manualPaletteDither !== null) paletteDither.checked = manualPaletteDither;');
+  expect(preferences).toContain('localStorage.setItem(paletteDitherPreferenceKey, value ? "1" : "0")');
+});
+
+test("copy text is replaced by final Unicode raster download and every button label stays on one line", async () => {
   const html = await readFile(join(root, "web", "index.html"), "utf8");
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
+  const baseCss = await readFile(join(root, "web", "styles", "base.css"), "utf8");
   const presetsCss = await readFile(join(root, "web", "styles", "presets.css"), "utf8");
   expect(html).toContain('<button id="download-raster" class="button primary" type="button">Download as raster</button>');
   expect(html).not.toContain('<button id="copy"');
   expect(studio).toContain('downloadRaster(current, foreground)');
   expect(studio).not.toContain('navigator.clipboard.writeText(textOutput())');
-  expect(presetsCss).toContain('& .button{white-space:nowrap;}');
+  expect(baseCss).toContain('font-weight:750;white-space:nowrap;cursor:pointer;');
   expect(presetsCss).toContain('#download-raster{font-size:clamp(');
 });
 
