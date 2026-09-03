@@ -3,8 +3,8 @@ import type { Art, Rgb } from "../types.ts";
 import { download } from "./download.ts";
 
 const preferredCellWidth = 8;
-const maxRasterDimension = 8192;
-const maxRasterCells = 750_000;
+const maxRasterDimension = 4096;
+const maxRasterCells = 2_500_000;
 
 const escapeXml = (value: string): string => value.replace(/[&<>"']/gu, char => ({
   "&": "&amp;",
@@ -37,16 +37,17 @@ export const rasterGeometry = (art: Art): RasterGeometry => {
   };
 };
 
-const paddedLine = (art: Art, y: number): string[] => [...(art.text.split("\n")[y] ?? "").padEnd(art.columns, "⠀")].slice(0, art.columns);
+const paddedLine = (line: string | undefined, columns: number): string[] => [...(line ?? "").padEnd(columns, "⠀")].slice(0, columns);
 
 export const rasterSvg = (art: Art, defaultForeground = "#111111"): string => {
   const geometry = rasterGeometry(art);
   const { cellWidth, cellHeight, width, height } = geometry;
   const backgrounds: string[] = [];
   const rows: string[] = [];
+  const lines = art.text.split("\n");
 
   for (let y = 0; y < art.rows; y += 1) {
-    const line = paddedLine(art, y);
+    const line = paddedLine(lines[y], art.columns);
     const rowOffset = y * art.columns;
 
     if (art.cellColours) {
