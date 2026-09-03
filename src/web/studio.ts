@@ -12,8 +12,9 @@ import { qs } from "./dom.ts";
 import { download } from "./download.ts";
 import { EmbedView } from "./embed-view.ts";
 import { cancelEmbedHtml, embedHtml } from "./embed.ts";
+import { applyOutputPreset, outputPreset as presetFor, outputPresets } from "./hardware.ts";
 import { decodeImage } from "./image.ts";
-import { parsePalette, remapPalette, type StudioArtCfg } from "./palette.ts";
+import { parsePalette, type StudioArtCfg } from "./palette.ts";
 import { downloadRaster } from "./raster.ts";
 import { bindResolutionGate } from "./resolution.ts";
 import { bindTooltips } from "./tooltips.ts";
@@ -41,9 +42,27 @@ export const startStudio = (): void => {
   const upload = qs<HTMLInputElement>("#upload"), drop = qs<HTMLElement>("#drop"), output = qs<HTMLElement>("#output"), status = qs<HTMLElement>("#status"), previewScroll = qs<HTMLElement>(".preview-scroll"), previewInfo = qs<HTMLButtonElement>("#preview-contrast-info");
   const columns = qs<HTMLInputElement>("#columns"), columnsValue = qs<HTMLInputElement>("#columns-value"), contrast = qs<HTMLInputElement>("#contrast"), detail = qs<HTMLInputElement>("#detail"), bias = qs<HTMLInputElement>("#bias"), dither = qs<HTMLSelectElement>("#dither"), invert = qs<HTMLInputElement>("#invert"), canvasToggle = qs<HTMLInputElement>("#canvas-toggle"), canvasToggleLabel = qs<HTMLElement>("#canvas-toggle-label"), reset = qs<HTMLButtonElement>("#reset-sliders"), resolutionTip = qs<HTMLElement>("#resolution-tip");
   const resolutionRange = qs<HTMLElement>(".resolution-range"), resolutionNotch = qs<HTMLElement>(".resolution-notch"), resolutionInfo = qs<HTMLButtonElement>(".resolution-control .slider-info");
-  const colour = qs<HTMLInputElement>("#colour"), fullColour = qs<HTMLInputElement>("#full-colour"), paletteInput = qs<HTMLTextAreaElement>("#palette"), paletteDither = qs<HTMLInputElement>("#palette-dither");
+  const colour = qs<HTMLInputElement>("#colour"), fullColour = qs<HTMLInputElement>("#full-colour"), presetSelect = qs<HTMLSelectElement>("#output-preset"), paletteInput = qs<HTMLTextAreaElement>("#palette"), paletteDither = qs<HTMLInputElement>("#palette-dither");
   const raster = qs<HTMLButtonElement>("#download-raster"), copyEmbed = qs<HTMLButtonElement>("#copy-embed"), txt = qs<HTMLButtonElement>("#download-txt"), html = qs<HTMLButtonElement>("#download-html"), svg = qs<HTMLButtonElement>("#download-svg"), metrics = qs<HTMLElement>("#metrics"), embedCode = qs<HTMLElement>("#embed-code");
   const embedProgress = qs<HTMLElement>("#embed-progress"), embedProgressBar = qs<HTMLProgressElement>("#embed-progress-bar"), embedProgressText = qs<HTMLOutputElement>("#embed-progress-text");
+
+  const presetFragment = document.createDocumentFragment();
+  let presetGroup: HTMLOptGroupElement | null = null;
+  let presetGroupName = "";
+  for (const preset of outputPresets) {
+    if (preset.group !== presetGroupName) {
+      presetGroupName = preset.group;
+      presetGroup = document.createElement("optgroup");
+      presetGroup.label = preset.group;
+      presetFragment.appendChild(presetGroup);
+    }
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    presetGroup?.appendChild(option);
+  }
+  presetSelect.replaceChildren(presetFragment);
+  presetSelect.value = "custom";
 
   const resolutionMax = 2048;
   const resolutionMin = Number(columns.min);
@@ -82,6 +101,7 @@ export const startStudio = (): void => {
     return {
       columns: Number(columnsValue.value), contrast: Number(contrast.value), detail: Number(detail.value), bias: Number(bias.value), dither: dither.value as Dither, invert: invert.checked,
       colour: colour.checked, colourBackground: full, fullColour: full,
+      outputPreset: presetSelect.value,
       ...(palette ? { palette, paletteDither: paletteDither.checked } : {}),
     };
   };
@@ -96,12 +116,14 @@ export const startStudio = (): void => {
     };
   };
 
-  const paletteVector = (source: VecStage): VecStage | null => {
+  const outputVector = (source: VecStage): VecStage | null => {
     try {
       const palette = parsePalette(paletteInput.value);
+      const preset = presetFor(presetSelect.value);
       paletteInput.setCustomValidity("");
       paletteInput.removeAttribute("aria-invalid");
-      return palette.length === 0 ? source : { ...source, pixels: remapPalette(source.pixels, palette, paletteDither.checked) };
+      const pixels = applyOutputPreset(source.pixels, preset, Number(columnsValue.value), palette, paletteDither.checked);
+      return pixels === source.pixels ? source : { ...source, pixels };
     } catch (error) {
       paletteInput.setCustomValidity(error instanceof Error ? error.message : "Invalid palette.");
       paletteInput.setAttribute("aria-invalid", "true");
@@ -265,7 +287,7 @@ export const startStudio = (): void => {
     await new Promise(requestAnimationFrame);
     const nextBase = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
     if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
-    const nextVector = paletteVector(nextBase);
+    const nextVector = outputVector(nextBase);
     if (!nextVector) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
     vectorBase = nextBase;
     vector = nextVector;
@@ -290,7 +312,7 @@ export const startStudio = (): void => {
       await new Promise(requestAnimationFrame);
       const nextBase = vectorStage(decoded.pixels, { colours: 64, alphaLevels: 16 });
       if (local !== loadGeneration) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
-      const nextVector = paletteVector(nextBase);
+      const nextVector = outputVector(nextBase);
       if (!nextVector) { if (decoded.revoke) URL.revokeObjectURL(decoded.url); return; }
       vectorBase = nextBase;
       vector = nextVector;
@@ -329,6 +351,7 @@ export const startStudio = (): void => {
     invert.checked = cfg.invert ?? true;
     colour.checked = cfg.colour === true;
     fullColour.checked = colour.checked && cfg.fullColour === true;
+    presetSelect.value = outputPresets.some(preset => preset.id === cfg.outputPreset) ? (cfg.outputPreset ?? "custom") : "custom";
     paletteInput.value = cfg.palette ?? "";
     paletteDither.checked = cfg.paletteDither === true;
     paletteInput.setCustomValidity("");
@@ -377,22 +400,40 @@ export const startStudio = (): void => {
     regenerateEmbed();
   });
 
-  let debounce = 0, paletteDebounce = 0;
+  let debounce = 0, outputDebounce = 0;
   const schedule = (): void => { window.clearTimeout(debounce); debounce = window.setTimeout(generateStudio, 90); };
-  const schedulePalette = (): void => {
-    window.clearTimeout(paletteDebounce);
-    paletteDebounce = window.setTimeout(() => {
+  const scheduleOutput = (): void => {
+    window.clearTimeout(outputDebounce);
+    outputDebounce = window.setTimeout(() => {
       if (!vectorBase) return;
-      const next = paletteVector(vectorBase);
+      const next = outputVector(vectorBase);
       if (!next) return;
       vector = next;
       generateStudio();
     }, 120);
   };
+  const scheduleResolution = (): void => { if (presetFor(presetSelect.value).engine) scheduleOutput(); else schedule(); };
+  const applyPresetDefaults = (): void => {
+    const preset = presetFor(presetSelect.value);
+    if (!preset.engine) { scheduleOutput(); return; }
+    if (preset.columns !== undefined) {
+      columnsValue.value = String(preset.columns);
+      columns.value = String(Math.min(resolutionMax, preset.columns));
+    }
+    paletteInput.value = preset.palette ?? "";
+    paletteDither.checked = preset.paletteDither ?? false;
+    if (preset.unicodeDither) dither.value = preset.unicodeDither;
+    colour.checked = true;
+    if (preset.fullColour !== undefined) fullColour.checked = preset.fullColour;
+    syncColour(true);
+    scheduleOutput();
+  };
+
   for (const control of [contrast, detail, bias, dither, invert]) control.addEventListener("input", schedule);
-  paletteInput.addEventListener("input", schedulePalette);
-  paletteDither.addEventListener("change", schedulePalette);
-  bindResolutionGate(columns, columnsValue, resolutionTip, schedule, {
+  paletteInput.addEventListener("input", scheduleOutput);
+  paletteDither.addEventListener("change", scheduleOutput);
+  presetSelect.addEventListener("change", applyPresetDefaults);
+  bindResolutionGate(columns, columnsValue, resolutionTip, scheduleResolution, {
     confirmAboveMax: value => window.confirm(`2K was the last stop. Are nya sure you want to keep going? Your RAM is already at the bus stop trying to get home.\n\nRequested resolution: ${value} cells. This is unsupported and may crash the tab.`),
   });
   colour.addEventListener("change", () => {
@@ -420,7 +461,7 @@ export const startStudio = (): void => {
     contrast.value = "1.12";
     detail.value = "0.34";
     bias.value = "0.015";
-    schedule();
+    scheduleResolution();
   });
   addEventListener("unicode-art-theme", event => {
     const theme = (event as CustomEvent<Theme>).detail;

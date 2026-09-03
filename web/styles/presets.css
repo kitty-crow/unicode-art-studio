@@ -1,0 +1,8 @@
+.colour-options{
+  & .preset-control{display:grid;gap:7px;font-size:.88rem;font-weight:700;color:var(--muted);}
+  & select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);}
+}
+.actions{
+  & .button{white-space:nowrap;}
+  & #download-raster{font-size:clamp(.72rem,calc(100vw / 28),1rem);}
+}
