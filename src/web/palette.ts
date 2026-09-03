@@ -3,6 +3,7 @@ import type { ArtCfg, Pixels, Rgb } from "../types.ts";
 export interface PaletteCfg {
   readonly palette?: string;
   readonly paletteDither?: boolean;
+  readonly outputPreset?: string;
 }
 
 export type StudioArtCfg = ArtCfg & PaletteCfg;
