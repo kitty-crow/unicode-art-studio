@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { Art, Pixels } from "../src/types.ts";
 import { parsePalette, remapPalette } from "../src/web/palette.ts";
 import { rasterGeometry, rasterSvg } from "../src/web/raster.ts";
+
+const root = join(import.meta.dir, "..");
 
 test("custom palette parser accepts RGB/RRGGBB lists and removes duplicates", () => {
   expect(parsePalette("#000, #ffffff\n#0af #000")).toEqual([
@@ -64,4 +68,27 @@ test("raster export builds a transparent final-Unicode SVG at a 1:2 cell ratio",
   expect(svg).toContain('fill="#0000ff"');
   expect(svg).toContain('fill="#ff0000"');
   expect(svg).not.toContain('<rect x="0" y="0" width="16" height="16"');
+});
+
+test("high-resolution raster geometry stays inside the browser pixel budget", () => {
+  const art: Art = {
+    text: "",
+    columns: 640,
+    rows: 200,
+    dotsWidth: 1280,
+    dotsHeight: 800,
+    threshold: 0.5,
+    density: 0,
+  };
+  expect(rasterGeometry(art)).toEqual({ cellWidth: 4, cellHeight: 8, width: 2560, height: 1600 });
+});
+
+test("raster download renders directly to canvas instead of decoding a giant SVG", async () => {
+  const raster = await readFile(join(root, "src", "web", "raster.ts"), "utf8");
+  expect(raster).toContain("const maxRasterPixels = 6_000_000;");
+  expect(raster).toContain("const renderRasterCanvas = async");
+  expect(raster).toContain("const canvas = await renderRasterCanvas(art, defaultForeground);");
+  expect(raster).toContain('if ((y + 1) % 16 === 0) await yieldToBrowser();');
+  expect(raster).not.toContain("const imageFrom =");
+  expect(raster).not.toContain("context.drawImage(image");
 });
