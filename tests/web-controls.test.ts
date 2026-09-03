@@ -95,7 +95,7 @@ test("copy text is replaced by final Unicode raster download and every button la
   const studio = await readFile(join(root, "src", "web", "studio.ts"), "utf8");
   const baseCss = await readFile(join(root, "web", "styles", "base.css"), "utf8");
   const presetsCss = await readFile(join(root, "web", "styles", "presets.css"), "utf8");
-  expect(html).toContain('<button id="download-raster" class="button primary" type="button">Download as raster</button>');
+  expect(html).toContain('<button id="download-raster" class="button primary" type="button">Download raster</button>');
   expect(html).not.toContain('<button id="copy"');
   expect(studio).toContain('downloadRaster(current, foreground)');
   expect(studio).not.toContain('navigator.clipboard.writeText(textOutput())');
