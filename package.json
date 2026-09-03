@@ -1,7 +1,7 @@
 {
   "name": "@kitty-crow/unicode-art-studio",
   "version": "0.4.37",
-  "description": "PNG and JPEG to dense Unicode art for Bun and the browser.",
+  "description": "PNG to dense Unicode art for Bun and the browser.",
   "type": "module",
   "license": "MIT",
   "author": "Kitty Crow <kitty@kittycrow.dev> (https://kittycrow.dev)",
