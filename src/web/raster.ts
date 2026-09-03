@@ -4,6 +4,7 @@ import { downloadImage } from "./download.ts";
 
 const preferredCellWidth = 8;
 const maxRasterDimension = 4096;
+const maxRasterPixels = 6_000_000;
 const maxRasterCells = 2_500_000;
 
 const escapeXml = (value: string): string => value.replace(/[&<>"']/gu, char => ({
@@ -27,7 +28,8 @@ export const rasterGeometry = (art: Art): RasterGeometry => {
   if (art.columns * art.rows > maxRasterCells) throw new Error("Raster export is too large for this browser.");
   const byWidth = Math.floor(maxRasterDimension / Math.max(1, art.columns));
   const byHeight = Math.floor(maxRasterDimension / Math.max(1, art.rows * 2));
-  const cellWidth = Math.min(preferredCellWidth, byWidth, byHeight);
+  const byPixels = Math.floor(Math.sqrt(maxRasterPixels / Math.max(1, art.columns * art.rows * 2)));
+  const cellWidth = Math.min(preferredCellWidth, byWidth, byHeight, byPixels);
   if (cellWidth < 1) throw new Error("Raster export exceeds the browser-safe image dimensions.");
   return {
     cellWidth,
@@ -80,13 +82,6 @@ export const rasterSvg = (art: Art, defaultForeground = "#111111"): string => {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><g font-family="Apple Braille,Noto Sans Symbols 2,DejaVu Sans Mono,Segoe UI Symbol,monospace" font-size="${cellHeight}" font-weight="400" font-synthesis="none" font-variant-ligatures="none" text-rendering="geometricPrecision">${backgrounds.join("")}${rows.join("")}</g></svg>`;
 };
 
-const imageFrom = (url: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
-  const image = new Image();
-  image.addEventListener("load", () => resolve(image), { once: true });
-  image.addEventListener("error", () => reject(new Error("Could not rasterise the generated Unicode SVG.")), { once: true });
-  image.src = url;
-});
-
 const pngBlob = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resolve, reject) => {
   canvas.toBlob(blob => {
     if (blob) resolve(blob);
@@ -94,21 +89,92 @@ const pngBlob = (canvas: HTMLCanvasElement): Promise<Blob> => new Promise((resol
   }, "image/png");
 });
 
-export const downloadRaster = async (art: Art, defaultForeground = "#111111"): Promise<string> => {
+const yieldToBrowser = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+
+const drawTextRun = (
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  fill: string,
+): void => {
+  if (![...text].some(char => char !== "⠀")) return;
+  const measured = context.measureText(text).width;
+  if (!(measured > 0)) return;
+  context.save();
+  context.translate(x, y);
+  context.scale(width / measured, 1);
+  context.fillStyle = fill;
+  context.fillText(text, 0, 0);
+  context.restore();
+};
+
+const renderRasterCanvas = async (art: Art, defaultForeground: string): Promise<HTMLCanvasElement> => {
   const geometry = rasterGeometry(art);
-  const svg = rasterSvg(art, defaultForeground);
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  const { cellWidth, cellHeight } = geometry;
+  const canvas = document.createElement("canvas");
+  canvas.width = geometry.width;
+  canvas.height = geometry.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is unavailable.");
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.textAlign = "left";
+  context.textBaseline = "top";
+  context.font = `${cellHeight}px Apple Braille, Noto Sans Symbols 2, DejaVu Sans Mono, Segoe UI Symbol, monospace`;
+
+  const lines = art.text.split("\n");
+  for (let y = 0; y < art.rows; y += 1) {
+    const line = paddedLine(lines[y], art.columns);
+    const rowOffset = y * art.columns;
+    const py = y * cellHeight;
+
+    if (art.cellColours) {
+      let x = 0;
+      while (x < art.columns) {
+        const background = art.cellColours[rowOffset + x]?.bg;
+        let end = x + 1;
+        while (end < art.columns && sameRgb(background, art.cellColours[rowOffset + end]?.bg)) end += 1;
+        if (background) {
+          context.fillStyle = rgbHex(background);
+          context.fillRect(x * cellWidth, py, (end - x) * cellWidth, cellHeight);
+        }
+        x = end;
+      }
+    }
+
+    let x = 0;
+    while (x < art.columns) {
+      const foreground = art.cellColours?.[rowOffset + x]?.fg;
+      let end = x + 1;
+      while (end < art.columns && sameRgb(foreground, art.cellColours?.[rowOffset + end]?.fg)) end += 1;
+      const text = line.slice(x, end).join("");
+      drawTextRun(
+        context,
+        text,
+        x * cellWidth,
+        py,
+        (end - x) * cellWidth,
+        foreground ? rgbHex(foreground) : defaultForeground,
+      );
+      x = end;
+    }
+
+    if ((y + 1) % 16 === 0) await yieldToBrowser();
+  }
+  return canvas;
+};
+
+export const downloadRaster = async (art: Art, defaultForeground = "#111111"): Promise<string> => {
+  const canvas = await renderRasterCanvas(art, defaultForeground);
   try {
-    const image = await imageFrom(url);
-    const canvas = document.createElement("canvas");
-    canvas.width = geometry.width;
-    canvas.height = geometry.height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas is unavailable.");
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return await downloadImage("png", "image/png", await pngBlob(canvas));
+    const blob = await pngBlob(canvas);
+    canvas.width = 1;
+    canvas.height = 1;
+    return await downloadImage("png", "image/png", blob);
   } finally {
-    URL.revokeObjectURL(url);
+    canvas.width = 1;
+    canvas.height = 1;
   }
 };
