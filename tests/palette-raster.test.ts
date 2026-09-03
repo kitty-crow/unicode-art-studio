@@ -17,7 +17,7 @@ test("palette remapping preserves alpha and transparent hidden RGB", () => {
     width: 2,
     height: 1,
     data: new Uint8ClampedArray([
-      250, 20, 20, 128,
+      250, 240, 240, 128,
       12, 34, 56, 0,
     ]),
   };
