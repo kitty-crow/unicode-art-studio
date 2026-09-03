@@ -65,18 +65,26 @@ test("manual palette dither choice survives later output preset changes", async 
   expect(preferences).toContain('localStorage.setItem(paletteDitherPreferenceKey, value ? "1" : "0")');
 });
 
-test("hardware output presets select their native vertical resolution in the Resolution control", async () => {
+test("hardware output presets map native horizontal pixels to two Unicode columns each", async () => {
   const preferences = await readFile(join(root, "src", "web", "preset-preferences.ts"), "utf8");
-  expect(preferences).toContain('"cga320-auto": 200');
-  expect(preferences).toContain('cga640: 200');
-  expect(preferences).toContain('cga160: 100');
-  expect(preferences).toContain('"c64-multicolour": 200');
-  expect(preferences).toContain('"nes-bg": 240');
-  expect(preferences).toContain('"snes-4bpp": 224');
-  expect(preferences).toContain('"genesis-4bpp": 224');
-  expect(preferences).toContain('svga640: 480');
-  expect(preferences).toContain('svga800: 600');
-  expect(preferences).toContain('svga1024: 768');
+  expect(preferences).toContain('"cga320-auto": 640');
+  expect(preferences).toContain('"cga320-p0-low": 640');
+  expect(preferences).toContain('"cga320-p0-high": 640');
+  expect(preferences).toContain('"cga320-p1-low": 640');
+  expect(preferences).toContain('"cga320-p1-high": 640');
+  expect(preferences).toContain('cga640: 1280');
+  expect(preferences).toContain('cga160: 320');
+  expect(preferences).toContain('ega16: 640');
+  expect(preferences).toContain('vga13: 640');
+  expect(preferences).toContain('svga640: 1280');
+  expect(preferences).toContain('svga800: 1600');
+  expect(preferences).toContain('svga1024: 2048');
+  expect(preferences).toContain('"c64-hires": 640');
+  expect(preferences).toContain('"c64-multicolour": 640');
+  expect(preferences).toContain('"nes-bg": 512');
+  expect(preferences).toContain('"snes-4bpp": 512');
+  expect(preferences).toContain('"snes-8bpp": 512');
+  expect(preferences).toContain('"genesis-4bpp": 640');
   expect(preferences).toContain('columns.value = String(resolution);');
   expect(preferences).toContain('columnsValue.value = String(resolution);');
   expect(preferences).toContain('columns.dispatchEvent(new Event("change", { bubbles: true }));');
