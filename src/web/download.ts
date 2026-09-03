@@ -16,7 +16,12 @@ const triggerDownload = (blob: Blob, name: string): void => {
   setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
 };
 
-const isWebKit = (): boolean => /AppleWebKit/u.test(navigator.userAgent);
+const isWebKit = (): boolean => {
+  const ua = navigator.userAgent;
+  if (!/AppleWebKit/u.test(ua)) return false;
+  if (/(?:iPhone|iPad|iPod)/u.test(ua)) return true;
+  return /Safari/u.test(ua) && !/(?:Chrome|Chromium|Edg|OPR|SamsungBrowser)/u.test(ua);
+};
 
 const shareImageOnWebKit = async (blob: Blob, name: string): Promise<boolean> => {
   if (!isWebKit() || typeof navigator.share !== "function") return false;
