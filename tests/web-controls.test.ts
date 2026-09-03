@@ -106,7 +106,8 @@ test("copy text is replaced by final Unicode raster download and every button la
 test("raster export uses WebKit image sharing while other downloads stay file downloads", async () => {
   const download = await readFile(join(root, "src", "web", "download.ts"), "utf8");
   const raster = await readFile(join(root, "src", "web", "raster.ts"), "utf8");
-  expect(download).toContain('/AppleWebKit/u.test(navigator.userAgent)');
+  expect(download).toContain('/AppleWebKit/u.test(ua)');
+  expect(download).toContain('/(?:iPhone|iPad|iPod)/u.test(ua)');
   expect(download).toContain('new File([blob], name');
   expect(download).toContain('navigator.canShare({ files: [file] })');
   expect(download).toContain('await navigator.share({ files: [file] })');
