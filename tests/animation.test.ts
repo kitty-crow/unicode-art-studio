@@ -25,13 +25,37 @@ test("animation uses one filter configuration for every frame and exact delta bo
   const animation = await read("src/web/animation.ts");
   const codec = await read("src/web/animation-codec.ts");
   expect(animation).toContain("const config = cfg();");
-  expect(animation).toContain("const art = makeArt(vector.pixels, config);");
+  expect(animation).toContain("const art = makeArt(pixels, config);");
   expect(codec).toContain("export const MAX_ANIMATION_BYTES = 25 * 1024 * 1024;");
   expect(codec).toContain("const diffBounds = (");
   expect(codec).toContain("previous[at] === current[at]");
   expect(codec).toContain('if (options.lossless || alpha)');
   expect(codec).toContain('imageFourCC = "VP8L";');
   expect(codec).toContain('fourCC: "ANMF"');
+});
+
+test("animation carries the existing hardware presets into every frame", async () => {
+  const animation = await read("src/web/animation.ts");
+  expect(animation).toContain('applyOutputPreset, outputPreset as presetFor, outputPresets');
+  expect(animation).toContain('presetSelect.id = "animation-output-preset";');
+  expect(animation).toContain("for (const preset of outputPresets)");
+  expect(animation).toContain('const preset = presetFor(presetSelect.value);');
+  expect(animation).toContain('const palette = parsePalette(preset.palette ?? "");');
+  expect(animation).toContain("const pixels = applyOutputPreset(vector.pixels, preset, Number(columnsValue.value), palette, paletteDither);");
+  expect(animation).toContain('presetSelect.addEventListener("change", applyPresetDefaults);');
+});
+
+test("animation preview is resized and contained so it cannot widen the mobile page", async () => {
+  const animation = await read("src/web/animation.ts");
+  const css = await read("web/styles/animation.css");
+  expect(animation).toContain("const fitPreviewCanvas = (): void => {");
+  expect(animation).toContain("const scale = Math.min(1, availableWidth / sourceWidth, availableHeight / sourceHeight);");
+  expect(animation).toContain("const previewResizeObserver = new ResizeObserver(fitPreviewCanvas);");
+  expect(css).toContain(".animation-panel,.animation-workspace,.animation-controls,.animation-preview,.animation-canvas-wrap,.animation-playback{min-width:0;max-width:100%;}");
+  expect(css).toContain(".animation-controls{& select{min-width:0;max-width:100%;}");
+  expect(css).toContain(".animation-canvas-wrap{box-sizing:border-box;width:100%");
+  expect(css).toContain("overflow:hidden");
+  expect(css).toContain("grid-template-columns:auto minmax(0,1fr) auto");
 });
 
 test("WebP exports preserve non-image RIFF chunks while GIF and ZIP remain raster exports", async () => {

@@ -3,6 +3,8 @@ import type { Art, ArtCfg, Dither } from "../types.ts";
 import { vectorStage } from "../vector/stage.ts";
 import { qs } from "./dom.ts";
 import { download } from "./download.ts";
+import { applyOutputPreset, outputPreset as presetFor, outputPresets } from "./hardware.ts";
+import { parsePalette } from "./palette.ts";
 import { rasterGeometry, renderRasterCanvas } from "./raster.ts";
 import {
   decodeAnimationFile,
@@ -44,6 +46,7 @@ export const startAnimationStudio = (): void => {
   const quality = qs<HTMLInputElement>("#animation-quality");
   const qualityValue = qs<HTMLOutputElement>("#animation-quality-value");
   const previewCanvas = qs<HTMLCanvasElement>("#animation-preview-canvas");
+  const previewWrap = qs<HTMLElement>(".animation-canvas-wrap");
   const status = qs<HTMLElement>("#animation-status");
   const metrics = qs<HTMLElement>("#animation-metrics");
   const extraData = qs<HTMLElement>("#animation-extra-data");
@@ -57,6 +60,32 @@ export const startAnimationStudio = (): void => {
   const progressBar = qs<HTMLProgressElement>("#animation-progress-bar");
   const progressText = qs<HTMLOutputElement>("#animation-progress-text");
 
+  const presetSelect = document.createElement("select");
+  presetSelect.id = "animation-output-preset";
+  const presetLabel = document.createElement("label");
+  presetLabel.className = "preset-control";
+  presetLabel.htmlFor = presetSelect.id;
+  presetLabel.append("Output preset", presetSelect);
+  fullColour.closest<HTMLElement>(".colour-options")?.appendChild(presetLabel);
+
+  const presetFragment = document.createDocumentFragment();
+  let presetGroup: HTMLOptGroupElement | null = null;
+  let presetGroupName = "";
+  for (const preset of outputPresets) {
+    if (preset.group !== presetGroupName) {
+      presetGroupName = preset.group;
+      presetGroup = document.createElement("optgroup");
+      presetGroup.label = preset.group;
+      presetFragment.appendChild(presetGroup);
+    }
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    presetGroup?.appendChild(option);
+  }
+  presetSelect.replaceChildren(presetFragment);
+  presetSelect.value = "custom";
+
   let source: AnimationSource | null = null;
   let sourceName = "animation";
   let sourceSize = 0;
@@ -69,6 +98,19 @@ export const startAnimationStudio = (): void => {
   let playTimer = 0;
   let exporting = false;
 
+  const fitPreviewCanvas = (): void => {
+    const sourceWidth = Math.max(1, previewCanvas.width);
+    const sourceHeight = Math.max(1, previewCanvas.height);
+    const availableWidth = Math.max(1, previewWrap.clientWidth);
+    const availableHeight = Math.max(1, previewWrap.clientHeight);
+    const scale = Math.min(1, availableWidth / sourceWidth, availableHeight / sourceHeight);
+    previewCanvas.style.width = `${Math.max(1, Math.floor(sourceWidth * scale))}px`;
+    previewCanvas.style.height = `${Math.max(1, Math.floor(sourceHeight * scale))}px`;
+  };
+
+  const previewResizeObserver = new ResizeObserver(fitPreviewCanvas);
+  previewResizeObserver.observe(previewWrap);
+
   const selectTab = (mode: "image" | "animation", updateHash = false): void => {
     const animation = mode === "animation";
     imageTab.setAttribute("aria-selected", String(!animation));
@@ -77,6 +119,7 @@ export const startAnimationStudio = (): void => {
     animationTab.tabIndex = animation ? 0 : -1;
     imagePanel.hidden = animation;
     animationPanel.hidden = !animation;
+    if (animation) requestAnimationFrame(fitPreviewCanvas);
     if (updateHash) history.replaceState(null, "", animation ? "#animation" : "#studio");
   };
 
@@ -151,6 +194,7 @@ export const startAnimationStudio = (): void => {
       context.drawImage(canvas, 0, 0);
       canvas.width = 1;
       canvas.height = 1;
+      fitPreviewCanvas();
       frameIndex = index;
       scrub.value = String(index);
       frameLabel.value = `${index + 1} / ${filtered.length}`;
@@ -208,6 +252,9 @@ export const startAnimationStudio = (): void => {
     setProgress(0, currentSource.frames.length, "Filtering");
     const next: FilteredFrame[] = [];
     const config = cfg();
+    const preset = presetFor(presetSelect.value);
+    const palette = parsePalette(preset.palette ?? "");
+    const paletteDither = preset.paletteDither ?? false;
 
     void (async () => {
       for (let index = 0; index < currentSource.frames.length; index += 1) {
@@ -215,7 +262,8 @@ export const startAnimationStudio = (): void => {
         const frame = currentSource.frames[index];
         if (!frame) continue;
         const vector = vectorStage(frame.pixels, { colours: 64, alphaLevels: 16 });
-        const art = makeArt(vector.pixels, config);
+        const pixels = applyOutputPreset(vector.pixels, preset, Number(columnsValue.value), palette, paletteDither);
+        const art = makeArt(pixels, config);
         next.push({ art, duration: frame.duration });
         setProgress(index + 1, currentSource.frames.length, "Filtering");
         if ((index + 1) % 2 === 0) await new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -261,11 +309,28 @@ export const startAnimationStudio = (): void => {
     schedule();
   };
 
+  const applyPresetDefaults = (): void => {
+    const preset = presetFor(presetSelect.value);
+    if (preset.columns !== undefined) {
+      const value = Math.max(Number(columns.min), Math.min(Number(columns.max), preset.columns));
+      columns.value = String(value);
+      columnsValue.value = String(value);
+    }
+    if (preset.unicodeDither) dither.value = preset.unicodeDither;
+    if (preset.engine) {
+      colour.checked = true;
+      if (preset.fullColour !== undefined) fullColour.checked = preset.fullColour;
+    }
+    syncColour();
+    schedule();
+  };
+
   columns.addEventListener("input", () => syncColumns(false));
   columnsValue.addEventListener("change", () => syncColumns(true));
   for (const control of [contrast, detail, bias, dither, invert]) control.addEventListener("input", schedule);
   colour.addEventListener("change", () => { syncColour(); schedule(); });
   fullColour.addEventListener("change", schedule);
+  presetSelect.addEventListener("change", applyPresetDefaults);
   optimisation.addEventListener("change", syncOptimisation);
   quality.addEventListener("input", syncOptimisation);
   reset.addEventListener("click", () => {
@@ -278,6 +343,7 @@ export const startAnimationStudio = (): void => {
     invert.checked = true;
     colour.checked = false;
     fullColour.checked = false;
+    presetSelect.value = "custom";
     syncColour();
     schedule();
   });
@@ -289,6 +355,7 @@ export const startAnimationStudio = (): void => {
     filtered = [];
     previewCanvas.width = 1;
     previewCanvas.height = 1;
+    fitPreviewCanvas();
     frameLabel.value = "0 / 0";
     if (file.size > MAX_ANIMATION_BYTES) {
       setStatus("Animations are limited to 25 MB.");
@@ -394,6 +461,7 @@ export const startAnimationStudio = (): void => {
 
   syncColour();
   syncOptimisation();
+  fitPreviewCanvas();
   setExports(false);
   updateMetrics();
 };
