@@ -36,15 +36,20 @@ const shareImageOnWebKit = async (blob: Blob, name: string): Promise<boolean> =>
   }
 };
 
-export const download = async (ext: string, type: string, body: BlobPart): Promise<string> => {
-  const blob = new Blob([body], { type });
+type DownloadBody = BlobPart | Uint8Array<ArrayBufferLike>;
+const asBlobPart = (body: DownloadBody): BlobPart => body instanceof Uint8Array
+  ? body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer
+  : body;
+
+export const download = async (ext: string, type: string, body: DownloadBody): Promise<string> => {
+  const blob = new Blob([asBlobPart(body)], { type });
   const name = await fileName(blob, ext);
   triggerDownload(blob, name);
   return name;
 };
 
-export const downloadImage = async (ext: string, type: string, body: BlobPart): Promise<string> => {
-  const blob = new Blob([body], { type });
+export const downloadImage = async (ext: string, type: string, body: DownloadBody): Promise<string> => {
+  const blob = new Blob([asBlobPart(body)], { type });
   const name = await fileName(blob, ext);
   if (!await shareImageOnWebKit(blob, name)) triggerDownload(blob, name);
   return name;

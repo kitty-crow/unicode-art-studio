@@ -15,13 +15,13 @@
     "pages:check": "bun vendor/pages/src/cli.ts check pages.config.ts",
     "check:c": "cc -std=c11 -Wall -Wextra -Wpedantic -Werror extras/term/unicode-colour-view.c -o /tmp/unicode-colour-view",
     "check": "bun run version:check && bun run pages:check && bunx tsc --noEmit && bun run check:c && bun run test",
-    "test": "bun test tests/core.test.ts tests/colour.test.ts tests/palette-raster.test.ts tests/hardware-presets.test.ts tests/vector.test.ts tests/embed.test.ts tests/cjk4096.test.ts tests/j8192.test.ts tests/japanese-compact.test.ts tests/ultra.test.ts tests/tpl.test.ts tests/web.test.ts tests/web-controls.test.ts tests/cache-restore.test.ts tests/static-html.test.ts tests/build.test.ts tests/fidelity.test.ts tests/studio-naming.test.ts tests/story-worker-route.test.ts",
+    "test": "bun test tests/core.test.ts tests/colour.test.ts tests/palette-raster.test.ts tests/hardware-presets.test.ts tests/vector.test.ts tests/embed.test.ts tests/cjk4096.test.ts tests/j8192.test.ts tests/japanese-compact.test.ts tests/ultra.test.ts tests/tpl.test.ts tests/web.test.ts tests/web-controls.test.ts tests/cache-restore.test.ts tests/static-html.test.ts tests/build.test.ts tests/fidelity.test.ts tests/studio-naming.test.ts tests/story-worker-route.test.ts tests/animation.test.ts",
     "build": "bun src/build.ts",
     "site:build": "bun src/build.ts",
     "site:dev": "bun src/build.ts && bun src/serve.ts",
     "cli": "bun src/cli.ts"
   },
-  "dependencies": { "brotli-wasm": "3.0.1", "fflate": "0.8.3", "pngjs": "7.0.0" },
+  "dependencies": { "@stacksjs/ts-webp": "0.1.3", "brotli-wasm": "3.0.1", "fflate": "0.8.3", "gifenc": "1.0.3", "gifuct-js": "2.1.2", "pngjs": "7.0.0" },
   "devDependencies": { "@types/bun": "1.3.14", "@types/pngjs": "6.0.5", "typescript": "5.9.3" },
   "engines": { "bun": ">=1.3.14" }
 }
