@@ -51,7 +51,8 @@ test("animation preview is resized and contained so it cannot widen the mobile p
   expect(animation).toContain("const fitPreviewCanvas = (): void => {");
   expect(animation).toContain("const scale = Math.min(1, availableWidth / sourceWidth, availableHeight / sourceHeight);");
   expect(animation).toContain("const previewResizeObserver = new ResizeObserver(fitPreviewCanvas);");
-  expect(css).toContain(".animation-panel,.animation-workspace,.animation-preview,.animation-canvas-wrap,.animation-playback{min-width:0;max-width:100%;}");
+  expect(css).toContain(".animation-panel,.animation-workspace,.animation-controls,.animation-preview,.animation-canvas-wrap,.animation-playback{min-width:0;max-width:100%;}");
+  expect(css).toContain(".animation-controls{& select{min-width:0;max-width:100%;}");
   expect(css).toContain(".animation-canvas-wrap{box-sizing:border-box;width:100%");
   expect(css).toContain("overflow:hidden");
   expect(css).toContain("grid-template-columns:auto minmax(0,1fr) auto");
