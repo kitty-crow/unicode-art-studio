@@ -1,3 +1,4 @@
+import type { BunPlugin } from "bun";
 import { chmod, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { build as buildPages, load as loadPages } from "../vendor/pages/src/index.ts";
@@ -13,6 +14,20 @@ const cdn = "https://kitty-crow.github.io/unicode-art-studio/v1/embed.js";
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version: string };
 const webVersion = pkg.version;
 const webCache = process.env.GITHUB_SHA?.slice(0, 12) || webVersion;
+
+// @stacksjs/ts-webp 0.1.3 publishes extensionless wildcard exports even though
+// its dist files use .js. Resolve only the browser-safe submodules we import
+// directly, avoiding the package root because that also exposes its cwebp CLI.
+const webpCodecPlugin: BunPlugin = {
+  name: "ts-webp-browser-subpaths",
+  setup(build) {
+    build.onResolve({ filter: /^@stacksjs\/ts-webp\/(.+)$/u }, args => {
+      const subpath = args.path.slice("@stacksjs/ts-webp/".length);
+      if (!/^(?:riff|animation|decoder|vp8\/encoder|vp8l\/encoder)$/u.test(subpath)) return undefined;
+      return { path: join(root, "node_modules", "@stacksjs", "ts-webp", "dist", `${subpath}.js`) };
+    });
+  },
+};
 
 const makeClassic = async (path: string): Promise<void> => {
   const source = await readFile(path, "utf8");
@@ -52,7 +67,7 @@ const define = {
 };
 const lib = await Bun.build({ entrypoints: [join(root, "src", "index.ts")], outdir: dist, target: "bun", format: "esm", sourcemap: "external", external: ["pngjs"], define });
 const cli = await Bun.build({ entrypoints: [join(root, "src", "cli.ts")], outdir: dist, target: "bun", format: "esm", sourcemap: "external", external: ["pngjs"], define });
-const web = await Bun.build({ entrypoints: [join(root, "src", "web.ts")], outdir: assets, target: "browser", format: "esm", naming: "app.js", minify: true, sourcemap: "none", define });
+const web = await Bun.build({ entrypoints: [join(root, "src", "web.ts")], outdir: assets, target: "browser", format: "esm", naming: "app.js", minify: true, sourcemap: "none", define, plugins: [webpCodecPlugin] });
 const worker = await Bun.build({ entrypoints: [join(root, "src", "web", "embed-worker.ts")], outdir: assets, target: "browser", format: "esm", naming: "embed-worker.js", minify: true, sourcemap: "none", define });
 const embed = await Bun.build({
   entrypoints: [join(root, "src", "embed", "runtime.ts")], outdir: api, target: "browser", format: "iife", naming: "embed.js", minify: true, sourcemap: "none"
