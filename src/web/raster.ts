@@ -110,7 +110,7 @@ const drawTextRun = (
   context.restore();
 };
 
-const renderRasterCanvas = async (art: Art, defaultForeground: string): Promise<HTMLCanvasElement> => {
+export const renderRasterCanvas = async (art: Art, defaultForeground: string): Promise<HTMLCanvasElement> => {
   const geometry = rasterGeometry(art);
   const { cellWidth, cellHeight } = geometry;
   const canvas = document.createElement("canvas");
